@@ -2,28 +2,20 @@
 
 set -euo pipefail
 
-# inputs from Bazel
-REQUIREMENTS_IN="{{requirements_in}}"
-REQUIREMENTS_TXT="{{requirements_txt}}"
+GENERATED_REQUIREMENTS_TXT="{{compiled_requirements_txt}}"
+REQUIREMENTS_TXT="{{requirements_txt_workspace_path}}"
 COMPILE_COMMAND="{{compile_command}}"
 
-# make a writable copy of incoming requirements
-updated_file=$(mktemp)
-trap 'rm -f "$updated_file"' EXIT
-cp "$REQUIREMENTS_TXT" "$updated_file"
+if [ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
+  REQUIREMENTS_TXT="$BUILD_WORKSPACE_DIRECTORY/$REQUIREMENTS_TXT"
+fi
 
-{{uv}} pip compile \
-    --quiet \
-    --no-cache \
-    {{args}} \
-    --output-file="$updated_file" \
-    "$REQUIREMENTS_IN"
+if [ ! -f "$REQUIREMENTS_TXT" ]; then
+  echo >&2 "FAIL: $REQUIREMENTS_TXT is missing. Run '$COMPILE_COMMAND' to update."
+  exit 1
+fi
 
-# check files match
-DIFF="$(diff "$REQUIREMENTS_TXT" "$updated_file" || true)"
-if [ "$DIFF" != "" ]
-then
+if ! diff -u "$REQUIREMENTS_TXT" "$GENERATED_REQUIREMENTS_TXT"; then
   echo >&2 "FAIL: $REQUIREMENTS_TXT is out-of-date. Run '$COMPILE_COMMAND' to update."
-  echo >&2 "$DIFF"
   exit 1
 fi

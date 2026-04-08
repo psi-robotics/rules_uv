@@ -32,9 +32,9 @@ pip_compile(
 
 Ensure both requirements.in and requirements.txt exist (the latter must exist but may be empty).
 
-Run the compilation step with `bazel run //:generate_requirements_txt`.
+Run the compilation step with `bazel run //:generate_requirements_txt`. This copies a hermetically generated file from `bazel-bin` into the source tree.
 
-This will automatically register a diff test with name `[name]_test`.
+This will automatically register a diff test with name `[name]_test` that compares the source file with the hermetic generated output.
 
 Additionally, you can specify the following optional args:
 

@@ -12,7 +12,7 @@ _DEFAULT_ARGS = [
     "--no-strip-extras",
 ]
 
-_COMMON_ATTRS = {
+_COMPILE_ATTRS = {
     "requirements_in": attr.label(mandatory = True, allow_single_file = True),
     "requirements_overrides": attr.label(mandatory = False, allow_single_file = True),
     "requirements_txt": attr.label(mandatory = True, allow_single_file = True),
@@ -23,7 +23,14 @@ _COMMON_ATTRS = {
     "uv_args": attr.string_list(default = _DEFAULT_ARGS),
     "extra_args": attr.string_list(),
     "env": attr.string_dict(),
+    "generator_label": attr.label(mandatory = True),
     "_uv": attr.label(default = "@multitool//tools/uv", executable = True, cfg = transition_to_target),
+}
+
+_UPDATE_ATTRS = {
+    "requirements_txt": attr.label(mandatory = True, allow_single_file = True),
+    "compiled_requirements": attr.label(mandatory = True, allow_single_file = True),
+    "env": attr.string_dict(),
 }
 
 def _python_version(py3_runtime):
@@ -41,19 +48,14 @@ def _python_runtime(ctx):
     py_toolchain = ctx.toolchains[_PY_TOOLCHAIN]
     return py_toolchain.py3_runtime
 
-def _uv_pip_compile(
-        ctx,
-        template,
-        executable,
-        generator_label,
-        uv_args,
-        extra_args):
+def _uv_pip_compile_generate_impl(ctx):
     py3_runtime = _python_runtime(ctx)
-    compile_command = "bazel run {label}".format(label = str(generator_label))
+    compile_command = "bazel run {label}".format(label = str(ctx.attr.generator_label.label))
+    output = ctx.outputs.requirements_txt
 
     args = []
-    args += uv_args
-    args += extra_args
+    args += ctx.attr.uv_args
+    args += ctx.attr.extra_args
     args.append("--custom-compile-command='{compile_command}'".format(compile_command = compile_command))
     args.append("--python={python}".format(python = python_interpreter_path(py3_runtime)))
     args.append("--python-version={version}".format(version = _python_version(py3_runtime)))
@@ -62,39 +64,61 @@ def _uv_pip_compile(
     elif ctx.attr.universal:
         args.append("--universal")
     if ctx.attr.requirements_overrides:
-        args.append("--overrides={overrides_file}".format(overrides_file = ctx.file.requirements_overrides.short_path))
+        args.append("--overrides={overrides_file}".format(overrides_file = ctx.file.requirements_overrides.path))
 
+    executable = ctx.actions.declare_file(ctx.attr.name)
     ctx.actions.expand_template(
-        template = template,
+        template = ctx.file._template,
         output = executable,
+        is_executable = True,
         substitutions = {
-            "{{uv}}": ctx.executable._uv.short_path,
+            "{{uv}}": ctx.executable._uv.path,
             "{{args}}": " \\\n    ".join(args),
-            "{{requirements_in}}": ctx.file.requirements_in.short_path,
-            "{{requirements_txt}}": ctx.file.requirements_txt.short_path,
-            "{{compile_command}}": compile_command,
+            "{{requirements_in}}": ctx.file.requirements_in.path,
+            "{{requirements_txt}}": output.path,
         },
     )
 
-def _runfiles(ctx):
-    py3_runtime = _python_runtime(ctx)
-    overrides_file = [ctx.file.requirements_overrides] if ctx.attr.requirements_overrides else []
-    runfiles = ctx.runfiles(
-        files = [ctx.file.requirements_in, ctx.file.requirements_txt] + overrides_file + ctx.files.data,
-        transitive_files = py3_runtime.files,
-    )
-    runfiles = runfiles.merge(ctx.attr._uv[0].default_runfiles)
-    return runfiles
+    inputs = [ctx.file.requirements_in] + ctx.files.data
+    if ctx.attr.requirements_overrides:
+        inputs.append(ctx.file.requirements_overrides)
 
-def _pip_compile_impl(ctx):
-    executable = ctx.actions.declare_file(ctx.attr.name)
-    _uv_pip_compile(
-        ctx = ctx,
-        template = ctx.file._template,
+    ctx.actions.run(
         executable = executable,
-        generator_label = ctx.label,
-        uv_args = ctx.attr.uv_args,
-        extra_args = ctx.attr.extra_args,
+        inputs = depset(inputs, transitive = [py3_runtime.files]),
+        tools = [ctx.executable._uv],
+        outputs = [output],
+        env = ctx.attr.env,
+        mnemonic = "UvPipCompile",
+        progress_message = "Generating {output}".format(output = output.short_path),
+    )
+
+    return [
+        DefaultInfo(files = depset([output])),
+    ]
+
+pip_compile = rule(
+    attrs = _COMPILE_ATTRS | {
+        "_template": attr.label(default = "//uv/private:pip_compile.sh", allow_single_file = True),
+    },
+    toolchains = [_PY_TOOLCHAIN],
+    implementation = _uv_pip_compile_generate_impl,
+)
+
+def _runfiles(ctx):
+    return ctx.runfiles(
+        files = [ctx.file.requirements_txt, ctx.file.compiled_requirements],
+    )
+
+def _pip_compile_update_impl(ctx):
+    executable = ctx.actions.declare_file(ctx.attr.name)
+    ctx.actions.expand_template(
+        template = ctx.file._template,
+        output = executable,
+        substitutions = {
+            "{{compiled_requirements_txt}}": ctx.file.compiled_requirements.short_path,
+            "{{requirements_txt_workspace_path}}": ctx.file.requirements_txt.short_path,
+        },
     )
     return [
         DefaultInfo(
@@ -106,24 +130,25 @@ def _pip_compile_impl(ctx):
         ),
     ]
 
-pip_compile = rule(
-    attrs = _COMMON_ATTRS | {
-        "_template": attr.label(default = "//uv/private:pip_compile.sh", allow_single_file = True),
+pip_compile_update = rule(
+    attrs = _UPDATE_ATTRS | {
+        "_template": attr.label(default = "//uv/private:pip_compile_update.sh", allow_single_file = True),
     },
-    toolchains = [_PY_TOOLCHAIN],
-    implementation = _pip_compile_impl,
+    implementation = _pip_compile_update_impl,
     executable = True,
 )
 
 def _pip_compile_test_impl(ctx):
     executable = ctx.actions.declare_file(ctx.attr.name)
-    _uv_pip_compile(
-        ctx = ctx,
+    compile_command = "bazel run {label}".format(label = str(ctx.attr.generator_label.label))
+    ctx.actions.expand_template(
         template = ctx.file._template,
-        executable = executable,
-        generator_label = ctx.attr.generator_label.label,
-        uv_args = ctx.attr.uv_args,
-        extra_args = ctx.attr.extra_args,
+        output = executable,
+        substitutions = {
+            "{{compiled_requirements_txt}}": ctx.file.compiled_requirements.short_path,
+            "{{requirements_txt_workspace_path}}": ctx.file.requirements_txt.short_path,
+            "{{compile_command}}": compile_command,
+        },
     )
     return [
         DefaultInfo(
@@ -134,16 +159,15 @@ def _pip_compile_test_impl(ctx):
             environment = ctx.attr.env,
             # Ensures that .netrc can be detected by uv
             # See https://github.com/theoremlp/rules_uv/issues/103
-            inherited_environment = ["HOME"],
+            inherited_environment = ["HOME", "BUILD_WORKSPACE_DIRECTORY"],
         ),
     ]
 
 pip_compile_test = rule(
-    attrs = _COMMON_ATTRS | {
+    attrs = _UPDATE_ATTRS | {
         "generator_label": attr.label(mandatory = True),
         "_template": attr.label(default = "//uv/private:pip_compile_test.sh", allow_single_file = True),
     },
-    toolchains = [_PY_TOOLCHAIN],
     implementation = _pip_compile_test_impl,
     test = True,
 )

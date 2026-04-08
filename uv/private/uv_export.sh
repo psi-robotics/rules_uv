@@ -8,15 +8,25 @@ REQUIREMENTS_TXT="{{requirements_txt}}"
 COMPILE_COMMAND="{{compile_command}}"
 UV_LOCK="{{uv_lock}}"
 
-# If uv.lock exists in the project directory, update it first
-PROJECT_DIR="$(dirname "$PYPROJECT_TOML")"
-LOCK_FILE="$PROJECT_DIR/uv.lock"
+WORK_DIR="$PWD/.uv_export_workdir"
+trap 'rm -rf "$WORK_DIR"' EXIT
+rm -rf "$WORK_DIR"
+mkdir -p "$WORK_DIR"
 
-# If UV_LOCK is provided, ensure it is the same as LOCK_FILE
-if ! [ "$UV_LOCK" -ef "$LOCK_FILE" ]; then
-    echo "Error: uv_lock ($UV_LOCK) is not the same file as expected ($LOCK_FILE). Please ensure uv_lock is in the same directory as pyproject.toml."
-    exit 1
-fi
+INPUT_FILES=(
+{{input_files}}
+)
+
+# Recreate a temporary workspace with the same directory structure as the original, and copy all input
+# files there in order to generate uv.lock that doesn't overwrite the original one
+for file in "${INPUT_FILES[@]}"; do
+    dst="$WORK_DIR/$file"
+    mkdir -p "$(dirname "$dst")"
+    cp "$file" "$dst"
+done
+
+PROJECT_DIR="$WORK_DIR/$(dirname "$PYPROJECT_TOML")"
+LOCK_FILE="$PROJECT_DIR/uv.lock"
 
 # Check if lockfile is up to date (non-empty and valid for current pyproject.toml)
 if [ ! -s "$LOCK_FILE" ] || ! {{uv}} lock --project "$PROJECT_DIR" --locked {{lock_args}} >/dev/null 2>&1; then
@@ -26,23 +36,12 @@ if [ ! -s "$LOCK_FILE" ] || ! {{uv}} lock --project "$PROJECT_DIR" --locked {{lo
     fi
 
     {{uv}} lock --project "$PROJECT_DIR" {{lock_args}}
-
-    # If BUILD_WORKSPACE_DIRECTORY is set, copy generated uv.lock back to source
-    if [ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
-        REL_DIR="$(dirname "$PYPROJECT_TOML")"
-        SOURCE_LOCK="$BUILD_WORKSPACE_DIRECTORY/$REL_DIR/uv.lock"
-
-        if [ -f "$SOURCE_LOCK" ] || [ -f "$LOCK_FILE" ]; then
-            #  If the target LOCK_FILE is a different file, overwrite it with the generated uv.lock
-            if ! [ "$LOCK_FILE" -ef "$SOURCE_LOCK" ]; then
-                cp "$LOCK_FILE" "$SOURCE_LOCK"
-            fi
-        fi
-    fi
 fi
 
 {{uv}} export \
     {{export_args}} \
-    --project=$PROJECT_DIR \
+    --project="$PROJECT_DIR" \
     --output-file="$REQUIREMENTS_TXT" \
     "$@"
+
+cp "$LOCK_FILE" "$UV_LOCK"

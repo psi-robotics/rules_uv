@@ -1,6 +1,6 @@
 "uv based uv lock rules"
 
-load("//uv/private:uv_export.bzl", "uv_export_test", _uv_export = "uv_export")
+load("//uv/private:uv_export.bzl", "uv_export_test", _uv_export = "uv_export", _uv_export_update = "uv_export_update")
 
 def uv_export(
         name,
@@ -53,40 +53,55 @@ def uv_export(
     uv_lock = uv_lock or "//:uv.lock"
     tags = tags or []
     size = size or "small"
+    compile_data = (data or []) + [uv_lock]
+
+    compile_target = name + ".compile"
+    update_target = name + ".update"
+
+    generated_requirements = "_{}.requirements.txt".format(name)
+    generated_uv_lock = "_{}.uv.lock".format(name)
 
     _uv_export(
-        name = name,
+        name = compile_target,
         pyproject_toml = pyproject_toml,
-        requirements_txt = requirements_txt,
-        uv_lock = uv_lock,
+        requirements_txt = generated_requirements,
+        uv_lock = generated_uv_lock,
         target_compatible_with = target_compatible_with,
         uv_args = args,
         common_args = common_args,
         lock_args = lock_args,
         export_args = export_args,
-        data = data,
+        data = compile_data,
+        env = env,
+        generator_label = ":" + name,
+        **kwargs
+    )
+
+    _uv_export_update(
+        name = update_target,
+        requirements_txt = requirements_txt,
+        uv_lock = uv_lock,
+        target_compatible_with = target_compatible_with,
+        generated_requirements_txt = ":" + generated_requirements,
+        generated_uv_lock = ":" + generated_uv_lock,
         env = env,
         **kwargs
     )
 
     # Also allow 'bazel run' with a "custom verb" https://bazel.build/rules/verbs-tutorial
     native.alias(
-        name = name + ".update",
-        actual = name,
+        name = name,
+        actual = update_target,
     )
 
     uv_export_test(
         name = name + "_test",
         generator_label = name,
-        pyproject_toml = pyproject_toml,
         requirements_txt = requirements_txt,
         uv_lock = uv_lock,
         target_compatible_with = target_compatible_with,
-        uv_args = args,
-        common_args = common_args,
-        lock_args = lock_args,
-        export_args = export_args,
-        data = data,
+        generated_requirements_txt = ":" + generated_requirements,
+        generated_uv_lock = ":" + generated_uv_lock,
         tags = ["requires-network"] + tags,
         size = size,
         timeout = timeout,

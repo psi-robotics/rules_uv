@@ -2,7 +2,7 @@
 
 load("@bazel_skylib//lib:types.bzl", "types")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("//uv/private:pip.bzl", "pip_compile_test", _pip_compile = "pip_compile")
+load("//uv/private:pip.bzl", "pip_compile_test", _pip_compile = "pip_compile", _pip_compile_update = "pip_compile_update")
 
 def pip_compile(
         name,
@@ -64,11 +64,14 @@ def pip_compile(
         )
         requirements_in = write_target
 
+    compile_target = name + ".compile"
+    update_target = name + ".update"
+    generated_requirements_txt = "_{}.requirements.txt".format(name)
+
     _pip_compile(
-        name = name,
+        name = compile_target,
         requirements_in = requirements_in,
         requirements_overrides = requirements_overrides,
-        requirements_txt = requirements_txt,
         python_platform = python_platform,
         universal = universal,
         target_compatible_with = target_compatible_with,
@@ -76,28 +79,33 @@ def pip_compile(
         uv_args = args,
         extra_args = extra_args,
         env = env,
+        generator_label = ":" + name,
+        requirements_txt = generated_requirements_txt,
+        **kwargs
+    )
+
+    _pip_compile_update(
+        name = update_target,
+        requirements_txt = requirements_txt,
+        target_compatible_with = target_compatible_with,
+        compiled_requirements = ":" + generated_requirements_txt,
+        env = env,
         **kwargs
     )
 
     # Also allow 'bazel run' with a "custom verb" https://bazel.build/rules/verbs-tutorial
     # Provides compatibility with rules_python's compile_pip_requirements [name].update target.
     native.alias(
-        name = name + ".update",
-        actual = name,
+        name = name,
+        actual = update_target,
     )
 
     pip_compile_test(
         name = name + "_test",
         generator_label = name,
-        requirements_in = requirements_in,
-        requirements_overrides = requirements_overrides,
         requirements_txt = requirements_txt,
-        python_platform = python_platform or "",
-        universal = universal,
+        compiled_requirements = ":" + generated_requirements_txt,
         target_compatible_with = target_compatible_with,
-        data = data,
-        uv_args = args,
-        extra_args = extra_args,
         tags = ["requires-network"] + tags,
         size = size,
         timeout = timeout,
