@@ -8,6 +8,22 @@ REQUIREMENTS_TXT="{{requirements_txt}}"
 COMPILE_COMMAND="{{compile_command}}"
 UV_LOCK="{{uv_lock}}"
 
+if [ -z "${UV_CACHE_DIR:-}" ]; then
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        UV_CACHE_DIR="$XDG_CACHE_HOME/uv"
+    elif [ -n "${HOME:-}" ]; then
+        UV_CACHE_DIR="$HOME/.cache/uv"
+    else
+        UV_CACHE_DIR="${TMPDIR:-/tmp}/rules_uv_uv_cache"
+    fi
+fi
+
+if ! mkdir -p "$UV_CACHE_DIR" 2>/dev/null; then
+    UV_CACHE_DIR="${TMPDIR:-/tmp}/rules_uv_uv_cache"
+    mkdir -p "$UV_CACHE_DIR"
+fi
+export UV_CACHE_DIR
+
 WORK_DIR="$PWD/.uv_export_workdir"
 trap 'rm -rf "$WORK_DIR"' EXIT
 rm -rf "$WORK_DIR"
