@@ -76,6 +76,7 @@ def _uv_export_compile_impl(ctx):
         inputs = depset(inputs, transitive = [py3_runtime.files]),
         tools = [ctx.executable._uv],
         outputs = [ctx.outputs.requirements_txt, ctx.outputs.uv_lock],
+        use_default_shell_env = True,
         env = ctx.attr.env,
         mnemonic = "UvExport",
         progress_message = "Generating {output}".format(output = ctx.outputs.requirements_txt.short_path),

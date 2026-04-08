@@ -88,6 +88,7 @@ def _uv_pip_compile_generate_impl(ctx):
         inputs = depset(inputs, transitive = [py3_runtime.files]),
         tools = [ctx.executable._uv],
         outputs = [output],
+        use_default_shell_env = True,
         env = ctx.attr.env,
         mnemonic = "UvPipCompile",
         progress_message = "Generating {output}".format(output = output.short_path),
