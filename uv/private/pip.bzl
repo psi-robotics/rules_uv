@@ -15,7 +15,7 @@ _DEFAULT_ARGS = [
 _COMPILE_ATTRS = {
     "requirements_in": attr.label(mandatory = True, allow_single_file = True),
     "requirements_overrides": attr.label(mandatory = False, allow_single_file = True),
-    "requirements_txt": attr.label(mandatory = True, allow_single_file = True),
+    "requirements_txt": attr.output(mandatory = True),
     "python_platform": attr.string(),
     "universal": attr.bool(),
     "py3_runtime": attr.label(),
@@ -23,7 +23,7 @@ _COMPILE_ATTRS = {
     "uv_args": attr.string_list(default = _DEFAULT_ARGS),
     "extra_args": attr.string_list(),
     "env": attr.string_dict(),
-    "generator_label": attr.label(mandatory = True),
+    "generator_label": attr.string(mandatory = True),
     "_uv": attr.label(default = "@multitool//tools/uv", executable = True, cfg = transition_to_target),
 }
 
@@ -50,7 +50,7 @@ def _python_runtime(ctx):
 
 def _uv_pip_compile_generate_impl(ctx):
     py3_runtime = _python_runtime(ctx)
-    compile_command = "bazel run {label}".format(label = str(ctx.attr.generator_label.label))
+    compile_command = "bazel run {label}".format(label = ctx.attr.generator_label)
     output = ctx.outputs.requirements_txt
 
     args = []
@@ -140,7 +140,7 @@ pip_compile_update = rule(
 
 def _pip_compile_test_impl(ctx):
     executable = ctx.actions.declare_file(ctx.attr.name)
-    compile_command = "bazel run {label}".format(label = str(ctx.attr.generator_label.label))
+    compile_command = "bazel run {label}".format(label = ctx.attr.generator_label)
     ctx.actions.expand_template(
         template = ctx.file._template,
         output = executable,
@@ -165,7 +165,7 @@ def _pip_compile_test_impl(ctx):
 
 pip_compile_test = rule(
     attrs = _UPDATE_ATTRS | {
-        "generator_label": attr.label(mandatory = True),
+        "generator_label": attr.string(mandatory = True),
         "_template": attr.label(default = "//uv/private:pip_compile_test.sh", allow_single_file = True),
     },
     implementation = _pip_compile_test_impl,

@@ -25,7 +25,7 @@ _COMPILE_ATTRS = {
     "export_args": attr.string_list(),
     "lock_args": attr.string_list(),
     "env": attr.string_dict(),
-    "generator_label": attr.label(mandatory = True),
+    "generator_label": attr.string(mandatory = True),
     "_template": attr.label(default = "//uv/private:uv_export.sh", allow_single_file = True),
     "_uv": attr.label(default = "@multitool//tools/uv", executable = True, cfg = transition_to_target),
 }
@@ -46,7 +46,7 @@ def _python_runtime(ctx):
 
 def _uv_export_compile_impl(ctx):
     py3_runtime = _python_runtime(ctx)
-    compile_command = "bazel run {label}".format(label = str(ctx.attr.generator_label.label))
+    compile_command = "bazel run {label}".format(label = ctx.attr.generator_label)
     python_arg = "--python={python}".format(python = python_interpreter_path(py3_runtime))
     export_args = ctx.attr.uv_args + ctx.attr.common_args + ctx.attr.export_args + [python_arg]
     lock_args = ctx.attr.lock_args + ctx.attr.common_args + [python_arg]
@@ -133,7 +133,7 @@ uv_export_update = rule(
 
 def _uv_export_test_impl(ctx):
     executable = ctx.actions.declare_file(ctx.attr.name)
-    compile_command = "bazel run {label}".format(label = str(ctx.attr.generator_label.label))
+    compile_command = "bazel run {label}".format(label = ctx.attr.generator_label)
     ctx.actions.expand_template(
         template = ctx.file._template,
         output = executable,
@@ -158,7 +158,7 @@ def _uv_export_test_impl(ctx):
 
 uv_export_test = rule(
     attrs = _UPDATE_ATTRS | {
-        "generator_label": attr.label(mandatory = True),
+        "generator_label": attr.string(mandatory = True),
         "_template": attr.label(default = "//uv/private:uv_export_test.sh", allow_single_file = True),
     },
     implementation = _uv_export_test_impl,
