@@ -47,8 +47,8 @@ Additionally, you can specify the following optional args:
 
 ### Run caching for `pip_compile` and `uv_export`
 
-`bazel run` always executes the target binary, so these rules keep a sidecar cache file at
-`<requirements_txt>.rules_uv.cache` to skip redundant `uv` work.
+`bazel run` always executes the target binary, so these rules keep cache metadata under Bazel's
+output tree (next to the generated runner in `bazel-bin` / `bazel-out`) to skip redundant `uv` work.
 
 A run is skipped only when all tracked inputs and arguments match the previous successful run:
 

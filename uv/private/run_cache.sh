@@ -8,12 +8,18 @@ rules_uv_hash_text() {
 
 rules_uv_cache_prepare() {
     local requirements_txt="$1"
+    local runner_path="$2"
+    local runner_dir
+    local cache_id
 
     RULES_UV_OUTPUT_FILE="$requirements_txt"
     if [ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
         RULES_UV_OUTPUT_FILE="$BUILD_WORKSPACE_DIRECTORY/$requirements_txt"
     fi
-    RULES_UV_CACHE_FILE="${RULES_UV_OUTPUT_FILE}.rules_uv.cache"
+
+    runner_dir="$(cd "$(dirname "$runner_path")" && pwd -P)"
+    cache_id="$(rules_uv_hash_text "${RULES_UV_CACHE_RULE}|${RULES_UV_OUTPUT_FILE}|${runner_dir}")"
+    RULES_UV_CACHE_FILE="${runner_dir}/.rules_uv_cache/${cache_id}.cache"
 }
 
 rules_uv_compute_cache_key() {

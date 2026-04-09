@@ -23,7 +23,7 @@ RULES_UV_CACHE_RULE="pip_compile"
 RULES_UV_CACHE_INPUTS="$CACHE_INPUTS"
 RULES_UV_CACHE_STATIC_ARGS="$CACHE_STATIC_ARGS"
 RULES_UV_CACHE_ENV="$CACHE_ENV"
-rules_uv_cache_prepare "$REQUIREMENTS_TXT"
+rules_uv_cache_prepare "$REQUIREMENTS_TXT" "$0"
 
 if rules_uv_cache_hit "$@"; then
     echo "INFO: Inputs for $REQUIREMENTS_TXT are unchanged; skipping uv pip compile."
