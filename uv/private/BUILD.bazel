@@ -4,6 +4,7 @@ exports_files([
     "create_venv.sh",
     "pip_compile_test.sh",
     "pip_compile.sh",
+    "run_cache.sh",
     "uv_export_test.sh",
     "uv_export.sh",
     "sync_venv.sh",

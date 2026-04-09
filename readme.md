@@ -45,6 +45,19 @@ Additionally, you can specify the following optional args:
 - `target_compatible_with`: restrict targets to running on the specified Bazel platform
 - `requirements_overrides`: a label for the file that is used to override dependencies (passed to uv via `--overrides`)
 
+### Run caching for `pip_compile` and `uv_export`
+
+`bazel run` always executes the target binary, so these rules keep a sidecar cache file at
+`<requirements_txt>.rules_uv.cache` to skip redundant `uv` work.
+
+A run is skipped only when all tracked inputs and arguments match the previous successful run:
+
+- tracked input file contents (`requirements_in`, `requirements_overrides`, `uv_lock`, and files passed via `data`)
+- configured rule arguments (including `args`, `extra_args`, `common_args`, `export_args`, `lock_args`, and `env`)
+- runtime args passed after `--` in `bazel run //:target -- ...`
+
+If any tracked input or argument changes, the command runs again and refreshes the cache key.
+
 ### create_venv
 
 Create a virtual environment creation target:

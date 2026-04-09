@@ -24,6 +24,7 @@ _COMMON_ATTRS = {
     "extra_args": attr.string_list(),
     "env": attr.string_dict(),
     "_uv": attr.label(default = "@multitool//tools/uv", executable = True, cfg = transition_to_target),
+    "_cache_lib": attr.label(default = "//uv/private:run_cache.sh", allow_single_file = True),
 }
 
 def _python_version(py3_runtime):
@@ -73,14 +74,31 @@ def _uv_pip_compile(
             "{{requirements_in}}": ctx.file.requirements_in.short_path,
             "{{requirements_txt}}": ctx.file.requirements_txt.short_path,
             "{{compile_command}}": compile_command,
+            "{{cache_inputs}}": "\n".join(_cache_inputs(ctx)),
+            "{{cache_static_args}}": "\n".join(args),
+            "{{cache_env}}": "\n".join(_cache_env(ctx)),
+            "{{cache_lib}}": ctx.file._cache_lib.short_path,
         },
     )
+
+def _cache_inputs(ctx):
+    inputs = [ctx.file.requirements_in.short_path]
+    if ctx.attr.requirements_overrides:
+        inputs.append(ctx.file.requirements_overrides.short_path)
+    inputs.extend([f.short_path for f in ctx.files.data])
+    return sorted(inputs)
+
+def _cache_env(ctx):
+    return sorted([
+        "{key}={value}".format(key = key, value = value)
+        for key, value in ctx.attr.env.items()
+    ])
 
 def _runfiles(ctx):
     py3_runtime = _python_runtime(ctx)
     overrides_file = [ctx.file.requirements_overrides] if ctx.attr.requirements_overrides else []
     runfiles = ctx.runfiles(
-        files = [ctx.file.requirements_in, ctx.file.requirements_txt] + overrides_file + ctx.files.data,
+        files = [ctx.file.requirements_in, ctx.file.requirements_txt, ctx.file._cache_lib] + overrides_file + ctx.files.data,
         transitive_files = py3_runtime.files,
     )
     runfiles = runfiles.merge(ctx.attr._uv[0].default_runfiles)

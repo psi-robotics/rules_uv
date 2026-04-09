@@ -26,6 +26,7 @@ _COMMON_ATTRS = {
     "lock_args": attr.string_list(),
     "env": attr.string_dict(),
     "_uv": attr.label(default = "@multitool//tools/uv", executable = True, cfg = transition_to_target),
+    "_cache_lib": attr.label(default = "//uv/private:run_cache.sh", allow_single_file = True),
 }
 
 def _python_runtime(ctx):
@@ -50,6 +51,7 @@ def _uv_uv_export(
 
     export_args = uv_args + common_args + export_args + [python_arg]
     lock_args = lock_args + common_args + [python_arg]
+    cache_static_args = ["[export_args]"] + export_args + ["[lock_args]"] + lock_args
 
     ctx.actions.expand_template(
         template = template,
@@ -62,12 +64,31 @@ def _uv_uv_export(
             "{{compile_command}}": compile_command,
             "{{export_args}}": " \\\n    ".join(export_args),
             "{{lock_args}}": " \\\n    ".join(lock_args),
+            "{{cache_inputs}}": "\n".join(_cache_inputs(ctx)),
+            "{{cache_static_args}}": "\n".join(cache_static_args),
+            "{{cache_env}}": "\n".join(_cache_env(ctx)),
+            "{{cache_lib}}": ctx.file._cache_lib.short_path,
         },
     )
 
+def _cache_inputs(ctx):
+    inputs = [
+        ctx.file.pyproject_toml.short_path,
+        ctx.file.uv_lock.short_path,
+    ]
+    inputs.extend([f.short_path for f in ctx.files.data])
+    return sorted(inputs)
+
+def _cache_env(ctx):
+    return sorted([
+        "{key}={value}".format(key = key, value = value)
+        for key, value in ctx.attr.env.items()
+    ])
+
+
 def _runfiles(ctx):
     py3_runtime = _python_runtime(ctx)
-    files = [ctx.file.pyproject_toml, ctx.file.requirements_txt, ctx.file.uv_lock] + ctx.files.data
+    files = [ctx.file.pyproject_toml, ctx.file.requirements_txt, ctx.file.uv_lock, ctx.file._cache_lib] + ctx.files.data
     runfiles = ctx.runfiles(
         files = files,
         transitive_files = py3_runtime.files,
