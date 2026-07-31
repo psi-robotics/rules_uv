@@ -1,12 +1,19 @@
 "uv based venv generation"
 
+load("@rules_python//python:defs.bzl", "PyRuntimeInfo")
 load(":interpreter_path.bzl", "python_interpreter_path")
 load(":transition_to_target.bzl", "transition_to_target")
 
 _PY_TOOLCHAIN = "@bazel_tools//tools/python:toolchain_type"
 
-def _uv_template(ctx, template, executable):
+def _python_runtime(ctx):
+    if ctx.attr.py3_runtime:
+        return ctx.attr.py3_runtime[PyRuntimeInfo]
     py_toolchain = ctx.toolchains[_PY_TOOLCHAIN]
+    return py_toolchain.py3_runtime
+
+def _uv_template(ctx, template, executable):
+    py3_runtime = _python_runtime(ctx)
 
     ctx.actions.expand_template(
         template = template,
@@ -14,7 +21,7 @@ def _uv_template(ctx, template, executable):
         substitutions = {
             "{{uv}}": ctx.executable._uv.short_path,
             "{{requirements_txt}}": ctx.file.requirements_txt.short_path,
-            "{{resolved_python}}": python_interpreter_path(py_toolchain.py3_runtime),
+            "{{resolved_python}}": python_interpreter_path(py3_runtime),
             "{{destination_folder}}": ctx.attr.destination_folder,
             "{{site_packages_extra_files}}": " ".join(["'" + file.short_path + "'" for file in ctx.files.site_packages_extra_files]),
             "{{args}}": " \\\n    ".join(ctx.attr.uv_args),
@@ -22,10 +29,10 @@ def _uv_template(ctx, template, executable):
     )
 
 def _runfiles(ctx):
-    py_toolchain = ctx.toolchains[_PY_TOOLCHAIN]
+    py3_runtime = _python_runtime(ctx)
     runfiles = ctx.runfiles(
         files = [ctx.file.requirements_txt] + ctx.files.site_packages_extra_files,
-        transitive_files = py_toolchain.py3_runtime.files,
+        transitive_files = py3_runtime.files,
     )
     runfiles = runfiles.merge(ctx.attr._uv[0].default_runfiles)
     return runfiles
@@ -43,6 +50,7 @@ _venv = rule(
         "destination_folder": attr.string(default = "venv"),
         "site_packages_extra_files": attr.label_list(default = [], doc = "Files to add to the site-packages folder inside the virtual environment. Useful for adding `sitecustomize.py` or `.pth` files", allow_files = True),
         "requirements_txt": attr.label(mandatory = True, allow_single_file = True),
+        "py3_runtime": attr.label(doc = "Python runtime to create the venv with. Defaults to the resolved py toolchain, i.e. the default interpreter; set it when requirements_txt is locked for a different one."),
         "_uv": attr.label(default = "@multitool//tools/uv", executable = True, cfg = transition_to_target),
         "template": attr.label(allow_single_file = True),
         "uv_args": attr.string_list(default = []),
@@ -52,7 +60,7 @@ _venv = rule(
     executable = True,
 )
 
-def create_venv(name, requirements_txt = None, target_compatible_with = None, destination_folder = None, site_packages_extra_files = [], uv_args = []):
+def create_venv(name, requirements_txt = None, target_compatible_with = None, destination_folder = None, site_packages_extra_files = [], uv_args = [], py3_runtime = None):
     _venv(
         name = name,
         destination_folder = destination_folder,
@@ -60,10 +68,11 @@ def create_venv(name, requirements_txt = None, target_compatible_with = None, de
         requirements_txt = requirements_txt or "//:requirements.txt",
         target_compatible_with = target_compatible_with,
         uv_args = uv_args,
+        py3_runtime = py3_runtime,
         template = Label("//uv/private:create_venv.sh"),
     )
 
-def sync_venv(name, requirements_txt = None, target_compatible_with = None, destination_folder = None, site_packages_extra_files = [], uv_args = []):
+def sync_venv(name, requirements_txt = None, target_compatible_with = None, destination_folder = None, site_packages_extra_files = [], uv_args = [], py3_runtime = None):
     _venv(
         name = name,
         destination_folder = destination_folder,
@@ -71,5 +80,6 @@ def sync_venv(name, requirements_txt = None, target_compatible_with = None, dest
         requirements_txt = requirements_txt or "//:requirements.txt",
         target_compatible_with = target_compatible_with,
         uv_args = uv_args,
+        py3_runtime = py3_runtime,
         template = Label("//uv/private:sync_venv.sh"),
     )
