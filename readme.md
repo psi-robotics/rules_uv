@@ -45,6 +45,59 @@ Additionally, you can specify the following optional args:
 - `target_compatible_with`: restrict targets to running on the specified Bazel platform
 - `requirements_overrides`: a label for the file that is used to override dependencies (passed to uv via `--overrides`)
 
+### uv_export
+
+Create a pyproject.toml + uv.lock -> requirements.txt export target and diff test:
+
+```starlark
+load("@rules_uv//uv:uv_export.bzl", "uv_export")
+
+uv_export(
+    name = "generate_requirements_txt",
+    pyproject_toml = "//:pyproject.toml", # default
+    requirements_txt = "//:requirements.txt", # default
+    uv_lock = "//:uv.lock", # default
+)
+```
+
+Where `pip_compile` shells out to `uv pip compile`, this pairs `uv lock` with `uv export`. Resolution
+therefore goes through `uv.lock` and the `[tool.uv]` settings in pyproject.toml apply --
+`override-dependencies`, `constraint-dependencies`, `environments`, `index-strategy` and so on. Reach
+for it when a project already maintains a `uv.lock`, or when its resolution cannot be expressed as a
+flat `uv pip compile` invocation.
+
+All three of pyproject.toml, uv.lock and requirements.txt must exist (the last two must exist but may
+be empty).
+
+Run the export with `bazel run //:generate_requirements_txt`, which refreshes both `uv.lock` and
+`requirements.txt`. A diff test named `[name]_test` is registered automatically, and `[name].update`
+is an alias for the runnable target.
+
+Additionally, you can specify the following optional args:
+
+- `args`: override the default arguments passed to `uv export` (`--format requirements.txt`, `--no-header` and `--no-emit-workspace`)
+- `common_args`: arguments appended to both the `uv lock` and the `uv export` invocation, e.g. `["--fork-strategy", "fewest"]`
+- `lock_args`: arguments passed only to `uv lock`
+- `export_args`: arguments appended to `uv export`, after `args`
+- `py3_runtime`: a label providing `PyRuntimeInfo`, whose interpreter resolves the lock instead of the one from the default python toolchain. Needed when the project targets a python version other than the default, e.g. `@python_3_12//:py3_runtime`
+- `data`: pass additional files to be present when exporting and testing, such as transitively included pyproject.toml files
+- `env`: a dictionary of environment variables to set
+- `tags`, `size`, `timeout`: applied to the generated test target
+- `target_compatible_with`: restrict targets to running on the specified Bazel platform
+
+### Run caching for `pip_compile` and `uv_export`
+
+`bazel run` always executes the target binary, so these rules keep cache metadata under Bazel's
+output tree (next to the generated runner in `bazel-bin` / `bazel-out`) to skip redundant `uv` work.
+
+A run is skipped only when all tracked inputs and arguments match the previous successful run:
+
+- tracked input file contents (`requirements_in`, `requirements_overrides`, `uv_lock`, and files passed via `data`)
+- configured rule arguments (including `args`, `extra_args`, `common_args`, `export_args`, `lock_args`, and `env`)
+- runtime args passed after `--` in `bazel run //:target -- ...`
+
+If any tracked input or argument changes, the command runs again and refreshes the cache key.
+
 ### create_venv
 
 Create a virtual environment creation target:
